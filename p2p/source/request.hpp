@@ -20,43 +20,25 @@
 /* }}} */
 
 
-#ifndef ORCHID_KRAKEN_HPP
-#define ORCHID_KRAKEN_HPP
+#ifndef ORCHID_REQUEST_HPP
+#define ORCHID_REQUEST_HPP
 
-#include "exchange.hpp"
+#include <map>
+#include <string>
 
 namespace orc {
 
-class KrakenExchange :
-    public Exchange
-{
-  private:
-    const std::string key_;
-    const Beam secret_;
+typedef std::map<std::string, std::string> Parameters;
+typedef Parameters::value_type Parameter;
 
-    Any Call(Response response) const;
+Parameters Merge(Parameters data, const Parameters &more);
 
-  public:
-    KrakenExchange(S<Base> base, std::string key, Beam secret) :
-        Exchange(std::move(base)),
-        key_(std::move(key)),
-        secret_(std::move(secret))
-    {
-    }
+std::string Percent(std::string value);
 
-    task<Any> Get(const std::string &path, Parameters args) const;
-    task<Any> Post(const std::string &path, Parameters args) const;
+std::string Query(const Parameters &args);
 
-    task<Portfolio> GetPortfolio() override;
-};
-
-class KrakenBook :
-    public Book
-{
-  public:
-    KrakenBook(const Object &object);
-};
+extern const std::string Chrome_;
 
 }
 
-#endif//ORCHID_KRAKEN_HPP
+#endif//ORCHID_REQUEST_HPP

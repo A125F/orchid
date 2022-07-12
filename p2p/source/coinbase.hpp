@@ -23,16 +23,43 @@
 #ifndef ORCHID_COINBASE_HPP
 #define ORCHID_COINBASE_HPP
 
-#include <string>
-
-#include "float.hpp"
-#include "task.hpp"
+#include "exchange.hpp"
 
 namespace orc {
 
-class Base;
+class CoinbaseExchange :
+    public Exchange
+{
+  private:
+    const std::string key_;
+    const std::string passphrase_;
+    const Beam secret_;
 
-task<Float> Coinbase(Base &base, const std::string &pair, const Float &adjust = Ten18);
+  public:
+    CoinbaseExchange(S<Base> base, std::string key, std::string passphrase, Beam secret) :
+        Exchange(std::move(base)),
+        key_(std::move(key)),
+        passphrase_(std::move(passphrase)),
+        secret_(std::move(secret))
+    {
+    }
+
+    task<Response> Call(const std::string &method, const std::string &path, const std::string &body) const;
+
+    task<Object> call(const std::string &method, const std::string &path, const std::string &body = {}) const;
+    task<Any> kill(const std::string &path, const std::string &body = {}) const;
+    cppcoro::async_generator<Object> list(std::string method, std::map<std::string, std::string> args) const;
+
+    task<Portfolio> GetPortfolio() override;
+};
+
+class CoinbaseBook :
+    public Book
+{
+  public:
+    void Set(const Object &event);
+    task<void> Run(const S<Base> &base, const std::string &pair);
+};
 
 }
 

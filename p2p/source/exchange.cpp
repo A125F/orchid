@@ -20,43 +20,31 @@
 /* }}} */
 
 
-#ifndef ORCHID_KRAKEN_HPP
-#define ORCHID_KRAKEN_HPP
-
 #include "exchange.hpp"
 
 namespace orc {
 
-class KrakenExchange :
-    public Exchange
-{
-  private:
-    const std::string key_;
-    const Beam secret_;
-
-    Any Call(Response response) const;
-
-  public:
-    KrakenExchange(S<Base> base, std::string key, Beam secret) :
-        Exchange(std::move(base)),
-        key_(std::move(key)),
-        secret_(std::move(secret))
-    {
-    }
-
-    task<Any> Get(const std::string &path, Parameters args) const;
-    task<Any> Post(const std::string &path, Parameters args) const;
-
-    task<Portfolio> GetPortfolio() override;
-};
-
-class KrakenBook :
-    public Book
-{
-  public:
-    KrakenBook(const Object &object);
-};
-
+double Book::Mid() const {
+    double before;
+    for (const auto &[price, amount] : orders_)
+        if (amount < 0)
+            return (price + before) / 2;
+        else
+            before = price;
+    return 0;
 }
 
-#endif//ORCHID_KRAKEN_HPP
+double Book::Liquidity(double depth) const {
+    const auto mid(Mid());
+    const auto under(mid / depth);
+    const auto over(mid * depth);
+
+    double liquidity(0);
+    for (const auto &[price, amount] : orders_)
+        if (price >= under && price <= over)
+            liquidity += price * std::abs(amount);
+
+    return liquidity;
+}
+
+}

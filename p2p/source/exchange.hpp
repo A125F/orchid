@@ -26,21 +26,89 @@
 #include <cppcoro/async_generator.hpp>
 
 #include <boost/date_time/posix_time/time_parsers.hpp>
+#include <boost/math/special_functions/sign.hpp>
 
 #include "base.hpp"
 #include "base64.hpp"
+#include "crypto.hpp"
+#include "decimal.hpp"
+#include "float.hpp"
+#include "format.hpp"
 #include "notation.hpp"
+#include "request.hpp"
 #include "time.hpp"
 
 namespace orc {
 
-class Exchange {
-  private:
-    const S<Base> base_;
+struct Portfolio :
+    std::map<std::string, double>
+{
+    Portfolio() = default;
 
-    const std::string key_;
-    const std::string passphrase_;
-    const Beam secret_;
+    Portfolio(std::map<std::string, double> data) :
+        std::map<std::string, double>(std::move(data))
+    {
+    }
+
+    double get(const std::string &key) const {
+        const auto value(find(key));
+        if (value == end()) return {};
+        return value->second;
+    }
+};
+
+static inline std::ostream &operator <<(std::ostream &out, const Portfolio &portfolio) {
+    out << "{";
+    for (const auto &[name, amount] : portfolio)
+        out << name << "=" << amount << ",";
+    out << "}";
+    return out;
+}
+
+template <typename Type_ = double>
+inline Type_ Side(const std::string_view &value) {
+    if (false);
+    else if (value == "buy")
+        return 1;
+    else if (value == "sell")
+        return -1;
+    else orc_assert(false);
+}
+
+template <typename Type_>
+Type_ Sign(const Type_ &value) {
+    return boost::math::signbit(value) ? -1 : 1;
+}
+
+inline const char *Side(double value) {
+    if (false);
+    else if (value > 0)
+        return "buy";
+    else if (value < 0)
+        return "sell";
+    else orc_assert(false);
+}
+
+template <typename Type_>
+struct Trade {
+    boost::posix_time::ptime traded_;
+    Type_ price_;
+    Type_ volume_;
+    Object extra_;
+};
+
+class Book {
+  protected:
+    std::map<double, double> orders_;
+
+  public:
+    double Mid() const;
+    double Liquidity(double depth) const;
+};
+
+class Exchange {
+  protected:
+    const S<Base> base_;
 
   public:
     Exchange(S<Base> base) :
@@ -48,69 +116,7 @@ class Exchange {
     {
     }
 
-    Exchange(S<Base> base, std::string key, std::string passphrase, Beam secret) :
-        base_(std::move(base)),
-        key_(std::move(key)),
-        passphrase_(std::move(passphrase)),
-        secret_(std::move(secret))
-    {
-    }
-
-    task<Response> operator ()(const std::string &method, const std::string &path, const std::string &body) const {
-        const auto timestamp(std::to_string(Timestamp()));
-        const auto signature(ToBase64(Auth<Hash2>(secret_, Tie(timestamp, method, path, body))));
-
-        co_return co_await base_->Fetch(method, {{"https", "api.pro.coinbase.com", "443"}, path}, {
-            {"Content-Type", "application/json"},
-            {"CB-ACCESS-KEY", key_},
-            {"CB-ACCESS-SIGN", signature},
-            {"CB-ACCESS-TIMESTAMP", timestamp},
-            {"CB-ACCESS-PASSPHRASE", passphrase_}
-        }, body);
-    }
-
-    task<Object> call(const std::string &method, const std::string &path, const std::string &body = {}) const {
-        co_return Parse((co_await operator ()(method, path, body)).ok()).as_object();
-    }
-
-    task<Any> kill(const std::string &path, const std::string &body = {}) const {
-        co_return Parse((co_await operator ()("DELETE", path, body)).ok());
-    }
-
-    cppcoro::async_generator<Object> list(std::string method, std::map<std::string, std::string> args) const {
-        for (;;) {
-            const auto path([&]() {
-                std::ostringstream path;
-                path << '/' << method;
-
-                bool ampersand(false);
-                for (const auto &arg : args) {
-                    if (ampersand)
-                        path << '&';
-                    else {
-                        path << '?';
-                        ampersand = true;
-                    }
-
-                    path << arg.first << '=' << arg.second;
-                }
-
-                return path.str();
-            }());
-
-            auto response(co_await operator()("GET", path, {}));
-            orc_assert_(response.result() == http::status::ok, response.body());
-
-            auto body(Parse(response.body()));
-            for (auto &value : body.as_array())
-                co_yield std::move(value.as_object());
-
-            const auto after(response.find("CB-AFTER"));
-            if (after == response.end())
-                break;
-            args["after"] = Str(after->value());
-        }
-    }
+    virtual task<Portfolio> GetPortfolio() = 0;
 };
 
 }

@@ -20,43 +20,34 @@
 /* }}} */
 
 
-#ifndef ORCHID_KRAKEN_HPP
-#define ORCHID_KRAKEN_HPP
+#include <sstream>
 
-#include "exchange.hpp"
+#include <boost/algorithm/string/replace.hpp>
+
+#include "request.hpp"
 
 namespace orc {
 
-class KrakenExchange :
-    public Exchange
-{
-  private:
-    const std::string key_;
-    const Beam secret_;
-
-    Any Call(Response response) const;
-
-  public:
-    KrakenExchange(S<Base> base, std::string key, Beam secret) :
-        Exchange(std::move(base)),
-        key_(std::move(key)),
-        secret_(std::move(secret))
-    {
-    }
-
-    task<Any> Get(const std::string &path, Parameters args) const;
-    task<Any> Post(const std::string &path, Parameters args) const;
-
-    task<Portfolio> GetPortfolio() override;
-};
-
-class KrakenBook :
-    public Book
-{
-  public:
-    KrakenBook(const Object &object);
-};
-
+// XXX: maybe I can std::move some of the more strings
+Parameters Merge(Parameters data, const Parameters &more) {
+    for (const auto &[name, value] : more)
+        data[name] = value;
+    return data;
 }
 
-#endif//ORCHID_KRAKEN_HPP
+std::string Percent(std::string value) {
+    boost::replace_all(value, "+", "%2B");
+    return value;
+}
+
+std::string Query(const Parameters &args) {
+    std::ostringstream query;
+    bool ampersand(false);
+    for (const auto &[name, value] : args)
+        query << (ampersand ? '&' : (ampersand = true, '?')) << Percent(name) << '=' << Percent(value);
+    return query.str();
+}
+
+const std::string Chrome_("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.62 Safari/537.36");
+
+}

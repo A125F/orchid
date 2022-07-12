@@ -20,43 +20,27 @@
 /* }}} */
 
 
-#ifndef ORCHID_KRAKEN_HPP
-#define ORCHID_KRAKEN_HPP
+#ifndef ORCHID_PRICING_HPP
+#define ORCHID_PRICING_HPP
 
-#include "exchange.hpp"
+#include <string>
+
+#include "float.hpp"
+#include "shared.hpp"
+#include "task.hpp"
 
 namespace orc {
 
-class KrakenExchange :
-    public Exchange
-{
-  private:
-    const std::string key_;
-    const Beam secret_;
+class Base;
+struct Currency;
 
-    Any Call(Response response) const;
+task<Float> Binance(Base &base, const std::string &pair, const Float &adjust = Ten18);
+task<Currency> Binance(unsigned milliseconds, S<Base> base, std::string currency);
 
-  public:
-    KrakenExchange(S<Base> base, std::string key, Beam secret) :
-        Exchange(std::move(base)),
-        key_(std::move(key)),
-        secret_(std::move(secret))
-    {
-    }
+task<Float> Coinbase(Base &base, const std::string &pair, const Float &adjust = Ten18);
 
-    task<Any> Get(const std::string &path, Parameters args) const;
-    task<Any> Post(const std::string &path, Parameters args) const;
-
-    task<Portfolio> GetPortfolio() override;
-};
-
-class KrakenBook :
-    public Book
-{
-  public:
-    KrakenBook(const Object &object);
-};
+task<Float> Kraken(Base &base, const std::string &pair, const Float &adjust = Ten18);
 
 }
 
-#endif//ORCHID_KRAKEN_HPP
+#endif//ORCHID_PRICING_HPP

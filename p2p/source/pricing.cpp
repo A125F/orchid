@@ -21,10 +21,10 @@
 
 
 #include "base.hpp"
-#include "binance.hpp"
 #include "currency.hpp"
 #include "locator.hpp"
 #include "notation.hpp"
+#include "pricing.hpp"
 #include "updater.hpp"
 
 namespace orc {
@@ -47,6 +47,26 @@ task<Currency> Binance(unsigned milliseconds, S<Base> base, std::string currency
     }, "Binance"))]() { return (*updated)(); });
 
     co_return Currency{std::move(currency), std::move(dollars)};
+}
+
+task<Float> Coinbase(Base &base, const std::string &pair, const Float &adjust) {
+    const auto response(co_await base.Fetch("GET", {{"https", "api.coinbase.com", "443"}, "/v2/prices/" + pair + "/spot"}, {}, {}));
+    const auto result(Parse(response.body()).as_object());
+    if (response.result() == http::status::ok) {
+        const auto &data(result.at("data").as_object());
+        co_return Float(Str(data.at("amount"))) / adjust;
+    } else {
+        const auto &errors(result.at("errors").as_array());
+        orc_assert(errors.size() == 1);
+        const auto &error(errors[0].as_object());
+        const auto id(Str(error.at("id")));
+        const auto message(Str(error.at("message")));
+        orc_throw(response.result() << "/" << id << ": " << message);
+    }
+}
+
+task<Float> Kraken(Base &base, const std::string &pair, const Float &adjust) {
+    co_return Float(Str(Parse((co_await base.Fetch("GET", {{"https", "api.kraken.com", "443"}, "/0/public/Ticker?pair=" + pair}, {}, {})).ok()).at("result").at(pair).at("c").at(0))) / adjust;
 }
 
 }

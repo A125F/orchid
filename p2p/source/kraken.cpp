@@ -20,15 +20,53 @@
 /* }}} */
 
 
-#include "base.hpp"
 #include "kraken.hpp"
-#include "locator.hpp"
-#include "notation.hpp"
 
 namespace orc {
 
-task<Float> Kraken(Base &base, const std::string &pair, const Float &adjust) {
-    co_return Float(Str(Parse((co_await base.Fetch("GET", {{"https", "api.kraken.com", "443"}, "/0/public/Ticker?pair=" + pair}, {}, {})).ok()).at("result").at(pair).at("c").at(0))) / adjust;
+Any KrakenExchange::Call(Response response) const {
+    const auto object(Parse(std::move(response).ok()));
+    const auto errors(object.at("error").as_array());
+    orc_assert_(errors.empty(), Unparse(errors));
+    return std::move(object.at("result"));
+}
+
+task<Any> KrakenExchange::Get(const std::string &path, Parameters args) const { orc_block({
+    co_return Call(co_await base_->Fetch("POST", {{"https", "api.kraken.com", "443"}, path + Query(args)}, {}, {}));
+}, "getting " << path + Query(args)); }
+
+task<Any> KrakenExchange::Post(const std::string &path, Parameters args) const { orc_block({
+    const auto nonce(std::to_string(Monotonic()));
+    args["nonce"] = nonce;
+    const auto body(Query(args).substr(1));
+
+    co_return Call(co_await base_->Fetch("POST", {{"https", "api.kraken.com", "443"}, path}, {
+        {"API-Key", key_},
+        {"API-Sign", ToBase64(Auth<Hash4, 128>(secret_, Tie(path, Hash2(Tie(nonce, body)))))},
+        {"Content-Type", "application/x-www-form-urlencoded; charset=utf-8"},
+    }, body));
+}, "posting " << path + Query(args)); }
+
+task<Portfolio> KrakenExchange::GetPortfolio() {
+    Portfolio portfolio;
+    const auto balances((co_await Post("/0/private/Balance", {})).as_object());
+    for (const auto &balance : balances)
+        if (const auto amount = To<double>(Str(balance.value())))
+            portfolio[std::string(balance.key())] = amount;
+    co_return portfolio;
+}
+
+KrakenBook::KrakenBook(const Object &object) {
+    for (const auto &i : object.at("bids").as_array()) {
+        const auto &bid(i.as_array());
+        orc_assert(bid.size() == 3);
+        orders_.try_emplace(To<double>(Str(bid.at(0))), 1. * To<double>(Str(bid.at(1))));
+    }
+    for (const auto &i : object.at("asks").as_array()) {
+        const auto &ask(i.as_array());
+        orc_assert(ask.size() == 3);
+        orders_.try_emplace(To<double>(Str(ask.at(0))), -1. * To<double>(Str(ask.at(1))));
+    }
 }
 
 }

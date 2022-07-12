@@ -23,19 +23,45 @@
 #ifndef ORCHID_BINANCE_HPP
 #define ORCHID_BINANCE_HPP
 
-#include <string>
-
-#include "float.hpp"
-#include "shared.hpp"
-#include "task.hpp"
+#include "exchange.hpp"
 
 namespace orc {
 
-class Base;
-struct Currency;
+class BinanceExchange :
+    public Exchange
+{
+  private:
+    const std::string key_;
+    const Beam secret_;
 
-task<Float> Binance(Base &base, const std::string &pair, const Float &adjust = Ten18);
-task<Currency> Binance(unsigned milliseconds, S<Base> base, std::string currency);
+  public:
+    BinanceExchange(S<Base> base, std::string key, Beam secret) :
+        Exchange(std::move(base)),
+        key_(std::move(key)),
+        secret_(std::move(secret))
+    {
+    }
+
+    task<Any> Call(const std::string &method, const std::string &path, std::map<std::string, std::string> args) const {
+        args["recvWindow"] = "1000";
+        args["timestamp"] = std::to_string(Monotonic() / 1000);
+        const auto query(Query(args));
+        co_return Parse((co_await base_->Fetch(method, {{"https", "api.binance.us", "443"},
+            F() << path << query << "&signature=" << Auth<Hash2, 64>(secret_, query.substr(1)).hex(false)
+        }, {
+            {"X-MBX-APIKEY", key_},
+        }, {})).ok());
+    }
+
+    task<Portfolio> GetPortfolio() override {
+        Portfolio portfolio;
+        const auto account((co_await Call("GET", "/api/v3/account", {})).as_object());
+        for (const auto &balance : account.at("balances").as_array())
+            if (const auto amount = To<double>(Str(balance.at("free"))) + To<double>(Str(balance.at("locked"))))
+                portfolio[Str(balance.at("asset"))] = amount;
+        co_return portfolio;
+    }
+};
 
 }
 
